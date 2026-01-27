@@ -1,0 +1,60 @@
+name: Supabase Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "database/**"
+
+jobs:
+  deploy:
+    name: Deploy to Supabase
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./database
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Configure Vault Credentials
+        run: |
+          if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
+            echo "Environment: PRODUCTION"
+            # Gán secret PROD vào biến môi trường chung
+            echo "VAULT_ROLE_ID=${{ secrets.VAULT_ROLE_ID_PROD }}" >> $GITHUB_ENV
+            echo "VAULT_SECRET_ID=${{ secrets.VAULT_SECRET_ID_PROD }}" >> $GITHUB_ENV
+            echo "VAULT_PATH=${{ secrets.VAULT_DATA_PATH_PROD }}" >> $GITHUB_ENV
+
+          elif [[ "${{ github.ref }}" == 'refs/heads/develop' ]]; then
+            echo "Environment: DEVELOPMENT"
+            # Gán secret DEV vào biến môi trường chung
+            echo "VAULT_ROLE_ID=${{ secrets.VAULT_ROLE_ID_DEV }}" >> $GITHUB_ENV
+            echo "VAULT_SECRET_ID=${{ secrets.VAULT_SECRET_ID_DEV }}" >> $GITHUB_ENV
+            echo "VAULT_PATH=${{ secrets.VAULT_DATA_PATH_DEV }}" >> $GITHUB_ENV
+          fi
+
+      - name: Import Secrets from Vault
+        uses: hashicorp/vault-action@v3
+        with:
+          url: ${{ secrets.VAULT_ADDR }}
+          method: approle
+          roleId: ${{ env.VAULT_ROLE_ID }}
+          secretId: ${{ env.VAULT_SECRET_ID }}
+          secrets: |
+            ${{ env.VAULT_PATH }} SUPABASE_ACCESS_TOKEN | SUPABASE_ACCESS_TOKEN ;
+            ${{ env.VAULT_PATH }} SUPABASE_DB_PASSWORD | SUPABASE_DB_PASSWORD ;
+            ${{ env.VAULT_PATH }} SUPABASE_PROJECT_ID | SUPABASE_PROJECT_ID ;
+
+      - name: Link Supabase Project
+        run: supabase link --project-ref $SUPABASE_PROJECT_ID
+
+      - name: Deploy
+        run: supabase db push
