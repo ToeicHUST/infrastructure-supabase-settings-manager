@@ -1,0 +1,1 @@
+# infrastructure-supabase-settings-manager
